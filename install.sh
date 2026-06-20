@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # ============================================================================
-# Triple Crown installer — gstack + superpowers + GSD (gsd-core) + /start
+# Triple Crown installer — gstack + superpowers + GSD (gsd-core) + /start + guidelines
 # Portable: macOS, Linux, WSL.   On native Windows, run this inside WSL.
 # Usage:  bash install.sh
-# Self-contained: the /start skill is embedded below (no network fetch for it).
+# Self-contained: the /start skill + PC-wide guidelines are embedded below (no network fetch).
 # ============================================================================
 set -uo pipefail
 
@@ -170,6 +170,33 @@ SKILL_EOF
 write_skill "$HOME/.claude/skills/start/SKILL.md"
 have codex && write_skill "$HOME/.codex/skills/start/SKILL.md"
 
+# ---- 4.5) PC-wide guidelines (managed block; cross-runtime: Claude + Codex) ----
+# Always-on instructions injected into every session. Idempotent: only the block
+# between the markers is replaced on re-run; any other content the user already has
+# in CLAUDE.md / AGENTS.md is preserved.
+GUIDE_BEGIN="<!-- TRIPLE-CROWN GUIDELINES — managed by install.sh; re-running replaces ONLY this block -->"
+GUIDE_END="<!-- /TRIPLE-CROWN GUIDELINES -->"
+upsert_guidelines(){
+  local f="$1" label="$2"; mkdir -p "$(dirname "$f")"; touch "$f"
+  local tmp; tmp="$(mktemp)"
+  awk -v b="$GUIDE_BEGIN" -v e="$GUIDE_END" '
+    $0==b{skip=1} skip==0{print} $0==e{skip=0}' "$f" > "$tmp"   # strip old block, keep rest
+  { cat "$tmp"; printf '\n%s\n' "$GUIDE_BEGIN"; cat <<'GUIDE_EOF'
+## Triple Crown — 작업 원칙 (PC 전역, 모든 프로젝트에 적용)
+
+- **사용자 조작 최소화**: 사용자에게 요구하는 수작업을 극히 최소한으로 줄인다.
+  설치·설정·코드 작성·검증·디버깅 등 웬만한 작업은 LLM이 직접 끝까지 처리한다.
+- **불가피한 사용자 조작**: 진행 도중 반드시 사용자의 직접 조작이 필요한 지점
+  (로그인·결제·2FA·외부 권한 승인 등)을 만나면, 그냥 떠넘기지 말고
+  **사용자가 가장 쉽고 빠르게 적용할 수 있는 방안**을 찾아 구체적으로 안내한다
+  (정확한 위치·명령어·복사해 붙여넣을 수 있는 값까지 제시).
+GUIDE_EOF
+    printf '%s\n' "$GUIDE_END"; } > "$f"
+  rm -f "$tmp"; ok "guidelines -> $f ($label)"
+}
+upsert_guidelines "$HOME/.claude/CLAUDE.md" "Claude Code"
+have codex && upsert_guidelines "$HOME/.codex/AGENTS.md" "Codex"
+
 # ---- 5) global process marker (every project same process) ----
 mkdir -p "$HOME/.gsd"
 [ -f "$HOME/.gsd/triple-crown.json" ] || printf '{"version":1,"workflow":"triple-crown"}' > "$HOME/.gsd/triple-crown.json"
@@ -177,4 +204,5 @@ mkdir -p "$HOME/.gsd"
 echo
 ok "Done. Restart Claude Code (or Codex), then:   /start \"<your idea>\""
 echo "    GSD + /start work on Claude Code and Codex. gstack lenses are Claude-only."
+echo "    PC-wide guidelines installed -> ~/.claude/CLAUDE.md (+ ~/.codex/AGENTS.md if codex)."
 [ "$OS" = wsl ] && echo "    (WSL: installed under your WSL home, not Windows C:\\.)"
