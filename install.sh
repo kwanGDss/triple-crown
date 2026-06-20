@@ -2,7 +2,9 @@
 # ============================================================================
 # Triple Crown installer — gstack + superpowers + GSD (gsd-core) + /start + guidelines
 # Portable: macOS, Linux, WSL.   On native Windows, run this inside WSL.
-# Usage:  bash install.sh
+# Usage:  bash install.sh                 # interactive: pick Claude Code and/or Codex
+#         bash install.sh --claude        # or --codex, or --all (non-interactive)
+#         TC_RUNTIMES="claude codex" bash install.sh
 # Self-contained: the /start skill + PC-wide guidelines are embedded below (no network fetch).
 # ============================================================================
 set -uo pipefail
@@ -26,8 +28,7 @@ if [ "$OS" = other ]; then
   err "Unsupported environment. On Windows, run this inside WSL (Ubuntu)."; exit 1
 fi
 
-# ---- prerequisites ----
-# node/npx + git are always required. At least one runtime — Claude Code OR Codex — is required.
+# ---- prerequisites (node/npx + git always required) ----
 MISS=0
 { have node && have npx; } || { err "Node.js/npx missing. Install Node 18+: https://nodejs.org (or nvm)."; MISS=1; }
 have git || { err "git missing. Install git."; MISS=1; }
@@ -36,11 +37,54 @@ if ! have claude && ! have codex; then
 fi
 if [ "$MISS" = 1 ]; then echo; err "Install the prerequisites above, then re-run. (Each runtime you use must be logged in.)"; exit 1; fi
 ok "prereqs: node/npx, git"
-if have claude; then ok "claude detected — installing Claude stack (gstack, superpowers, GSD, /start, guidelines)"; else warn "claude not found — skipping Claude Code stack (optional)"; fi
-if have codex;  then ok "codex detected — installing Codex stack (GSD, /start, guidelines)"; else warn "codex not found — skipping Codex (optional)"; fi
+
+# ---- choose runtime(s): Claude Code and/or Codex ----
+# Pick one or BOTH. Selection order:  CLI flags > env (TC_RUNTIMES) > interactive prompt > auto-detect.
+# Non-interactive / CI:   curl ... | bash -s -- --claude --codex     (or --all, or one of them)
+#                         TC_RUNTIMES="claude codex"  curl ... | bash
+WANT_CLAUDE=0; WANT_CODEX=0; PICKED=0
+for a in "$@"; do case "$a" in
+  --claude)     WANT_CLAUDE=1; PICKED=1 ;;
+  --codex)      WANT_CODEX=1;  PICKED=1 ;;
+  --all|--both) WANT_CLAUDE=1; WANT_CODEX=1; PICKED=1 ;;
+esac; done
+if [ "$PICKED" = 0 ] && [ -n "${TC_RUNTIMES:-}" ]; then
+  case "$TC_RUNTIMES" in *claude*) WANT_CLAUDE=1 ;; esac
+  case "$TC_RUNTIMES" in *codex*)  WANT_CODEX=1  ;; esac
+  PICKED=1
+fi
+# Interactive multi-select — reads the terminal even under `curl | bash` (stdin is the script there).
+if [ "$PICKED" = 0 ] && [ -r /dev/tty ]; then
+  echo
+  echo "Which runtime(s) to set up?  (you can pick BOTH)"
+  echo "   1) Claude Code   $(have claude && echo '[detected]' || echo '[not installed]')"
+  echo "   2) Codex         $(have codex  && echo '[detected]' || echo '[not installed]')"
+  echo "   3) Both"
+  printf "Enter 1, 2, 3 (or e.g. '1 2')  [Enter = all detected]: "
+  read -r ans < /dev/tty || ans=""
+  case "$ans" in
+    *3*) WANT_CLAUDE=1; WANT_CODEX=1 ;;
+    *)   case "$ans" in *1*) WANT_CLAUDE=1 ;; esac
+         case "$ans" in *2*) WANT_CODEX=1  ;; esac ;;
+  esac
+  PICKED=1
+fi
+# Fallback (no flags / no env / no tty / blank answer): auto-detect what's installed.
+if [ "$WANT_CLAUDE" = 0 ] && [ "$WANT_CODEX" = 0 ]; then
+  have claude && WANT_CLAUDE=1
+  have codex  && WANT_CODEX=1
+fi
+# Drop any selection whose CLI isn't actually installed.
+if [ "$WANT_CLAUDE" = 1 ] && ! have claude; then warn "Claude Code selected but 'claude' CLI not found — skipping (install it + re-run)."; WANT_CLAUDE=0; fi
+if [ "$WANT_CODEX"  = 1 ] && ! have codex;  then warn "Codex selected but 'codex' CLI not found — skipping (install it + re-run)."; WANT_CODEX=0; fi
+if [ "$WANT_CLAUDE" = 0 ] && [ "$WANT_CODEX" = 0 ]; then
+  echo; err "No usable runtime to set up. Install Claude Code and/or Codex (and select it), then re-run."; exit 1
+fi
+[ "$WANT_CLAUDE" = 1 ] && ok "selected: Claude Code"
+[ "$WANT_CODEX"  = 1 ] && ok "selected: Codex"
 
 # ---- bun (needed by gstack ./setup, Claude-only) — bootstrap if missing ----
-if have claude; then
+if [ "$WANT_CLAUDE" = 1 ]; then
   if ! have bun; then
     warn "bun missing — installing (gstack needs it)..."
     curl -fsSL https://bun.sh/install | bash || warn "bun install failed"
@@ -50,7 +94,7 @@ if have claude; then
 fi
 
 # ---- 1) gstack (Claude Code only; official install) ----
-if have claude; then
+if [ "$WANT_CLAUDE" = 1 ]; then
   GS="$HOME/.claude/skills/gstack"
   if [ -d "$GS/.git" ]; then
     echo "gstack present — updating..."; ( cd "$GS" && git pull --quiet && ./setup ) && ok "gstack updated" || warn "gstack update issues"
@@ -64,7 +108,7 @@ if have claude; then
 fi
 
 # ---- 2) superpowers (Claude plugin) ----
-if have claude; then
+if [ "$WANT_CLAUDE" = 1 ]; then
   echo "Installing superpowers..."
   claude plugin marketplace add anthropics/claude-plugins-official >/dev/null 2>&1 || true
   claude plugin install superpowers@claude-plugins-official >/dev/null 2>&1 && ok "superpowers installed" || warn "superpowers install issues (is Claude logged in?)"
@@ -74,10 +118,10 @@ fi
 echo "Installing GSD (gsd-core)..."
 # On WSL (and Docker bind-mounts), make hook paths $HOME-relative so settings.json stays portable.
 PH=""; [ "$OS" = wsl ] && { PH="--portable-hooks"; echo "  (WSL: using --portable-hooks)"; }
-if have claude; then
+if [ "$WANT_CLAUDE" = 1 ]; then
   npx -y @opengsd/gsd-core@latest --claude --global $PH >/dev/null 2>&1 && ok "GSD -> Claude Code" || warn "GSD (claude) install issues"
 fi
-if have codex; then
+if [ "$WANT_CODEX" = 1 ]; then
   npx -y @opengsd/gsd-core@latest --codex --global $PH >/dev/null 2>&1 && ok "GSD -> Codex" || warn "GSD (codex) install issues"
 fi
 
@@ -179,8 +223,8 @@ Do NOT ship / merge / deploy automatically — **tested-but-not-shipped** is thi
 SKILL_EOF
   ok "/start -> $dst"
 }
-have claude && write_skill "$HOME/.claude/skills/start/SKILL.md"
-have codex  && write_skill "$HOME/.codex/skills/start/SKILL.md"
+[ "$WANT_CLAUDE" = 1 ] && write_skill "$HOME/.claude/skills/start/SKILL.md"
+[ "$WANT_CODEX"  = 1 ] && write_skill "$HOME/.codex/skills/start/SKILL.md"
 
 # ---- 4.5) PC-wide guidelines (managed block; cross-runtime: Claude + Codex) ----
 # Always-on instructions injected into every session. Idempotent: only the block
@@ -206,8 +250,8 @@ GUIDE_EOF
     printf '%s\n' "$GUIDE_END"; } > "$f"
   rm -f "$tmp"; ok "guidelines -> $f ($label)"
 }
-have claude && upsert_guidelines "$HOME/.claude/CLAUDE.md" "Claude Code"
-have codex  && upsert_guidelines "$HOME/.codex/AGENTS.md" "Codex"
+[ "$WANT_CLAUDE" = 1 ] && upsert_guidelines "$HOME/.claude/CLAUDE.md" "Claude Code"
+[ "$WANT_CODEX"  = 1 ] && upsert_guidelines "$HOME/.codex/AGENTS.md" "Codex"
 
 # ---- 5) global process marker (every project same process) ----
 mkdir -p "$HOME/.gsd"
@@ -215,8 +259,8 @@ mkdir -p "$HOME/.gsd"
 
 echo
 ok "Done. Restart your runtime, then:   /start \"<your idea>\"  (Claude)   ·   \$start \"<your idea>\"  (Codex)"
-echo "    Installed per detected runtime — GSD + /start + guidelines for each; gstack/superpowers are Claude-only."
-have claude && echo "    Claude guidelines -> ~/.claude/CLAUDE.md"
-have codex  && echo "    Codex  guidelines -> ~/.codex/AGENTS.md"
+echo "    Installed for your selected runtime(s) — GSD + /start + guidelines each; gstack/superpowers are Claude-only."
+[ "$WANT_CLAUDE" = 1 ] && echo "    Claude guidelines -> ~/.claude/CLAUDE.md"
+[ "$WANT_CODEX"  = 1 ] && echo "    Codex  guidelines -> ~/.codex/AGENTS.md"
 [ "$OS" = wsl ] && echo "    (WSL: installed under your WSL home, not Windows C:\\.)"
 exit 0

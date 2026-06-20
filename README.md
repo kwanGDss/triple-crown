@@ -12,17 +12,34 @@ curl -fsSL https://raw.githubusercontent.com/kwanGDss/triple-crown/main/install.
 
 The installer is self-contained — the `/start` skill and the PC-wide guidelines are embedded, no extra downloads.
 
+On launch it **asks which runtime(s) to set up** — pick **Claude Code**, **Codex**, or **both**:
+
+```
+Which runtime(s) to set up?  (you can pick BOTH)
+   1) Claude Code   [detected]
+   2) Codex         [detected]
+   3) Both
+Enter 1, 2, 3 (or e.g. '1 2')  [Enter = all detected]:
+```
+
+The prompt works even through `curl … | bash` (it reads your terminal). For **non-interactive / CI**, choose with flags or an env var instead:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kwanGDss/triple-crown/main/install.sh | bash -s -- --claude   # or --codex, or --all
+TC_RUNTIMES="claude codex" bash <(curl -fsSL https://raw.githubusercontent.com/kwanGDss/triple-crown/main/install.sh)
+```
+
 ### Prerequisites (install inside the same environment first)
 - **At least one runtime** — **Claude Code** CLI and/or **Codex** CLI (each one you use must be **logged in**)
 - **Node.js 18+** (`node`/`npx`)
 - **git**
 
-The installer **detects which runtimes are present** and sets up each — run it on a **Claude-only**, a **Codex-only**, or a **both** machine:
+It sets up only the runtime(s) you choose (a selected runtime whose CLI isn't installed is skipped with a warning):
 
 | | installs |
 |---|---|
-| **Claude Code** *(if present)* | gstack, superpowers, GSD, `/start`, PC-wide guidelines (auto-bootstraps **bun** for gstack) |
-| **Codex** *(if present)* | GSD, `/start`, PC-wide guidelines |
+| **Claude Code** | gstack, superpowers, GSD, `/start`, PC-wide guidelines (auto-bootstraps **bun** for gstack) |
+| **Codex** | GSD, `/start`, PC-wide guidelines |
 
 On WSL, GSD hooks use `--portable-hooks`. gstack & superpowers are Claude-only by design.
 
@@ -43,12 +60,12 @@ Runs the current Triple Crown lifecycle: **validate → scaffold → build → t
 - **gstack** *(Claude only)* — specialist lenses GSD lacks: strategy (`office-hours`), plan reviews, live browser QA
 - **superpowers** *(Claude only)* — TDD / verification, applied automatically inside execution
 
-## PC-wide guidelines (always-on, per installed runtime)
+## PC-wide guidelines (always-on, per selected runtime)
 
-The installer also writes an **always-on instruction block** that applies across every project on the machine, to whichever runtimes are present:
+The installer also writes an **always-on instruction block** that applies across every project on the machine, to whichever runtime(s) you selected:
 
-- **Claude Code** → `~/.claude/CLAUDE.md` *(only if `claude` is installed)*
-- **Codex** → `~/.codex/AGENTS.md` *(only if `codex` is installed)*
+- **Claude Code** → `~/.claude/CLAUDE.md`
+- **Codex** → `~/.codex/AGENTS.md`
 
 The block:
 
