@@ -25,9 +25,9 @@ Enter 1, 2, or 3:
 The prompt works even through `curl … | bash` (it reads your terminal). Run it in a terminal — it's interactive.
 
 ### Prerequisites (install inside the same environment first)
-- The **runtime(s) you'll pick** — **Claude Code** CLI and/or **Codex** CLI (each must be **logged in**)
-- **Node.js 18+** (`node`/`npx`)
-- **git**
+- The **runtime(s) you'll pick** — **Claude Code** CLI and/or **Codex** CLI, installed and **logged in**
+- **git** and **curl**
+- **Node.js 18+** — *auto-installed via nvm if missing* (like bun), so you usually don't need to set it up yourself
 
 It sets up exactly the runtime(s) you choose:
 
@@ -36,7 +36,7 @@ It sets up exactly the runtime(s) you choose:
 | **Claude Code** | gstack, superpowers, GSD, `/start`, PC-wide guidelines (auto-bootstraps **bun** for gstack) |
 | **Codex** | GSD, `/start`, PC-wide guidelines |
 
-On WSL, GSD hooks use `--portable-hooks`. gstack & superpowers are Claude-only by design.
+On WSL, GSD hooks use `--portable-hooks`. gstack & superpowers are Claude-only by design. If the install hits a problem it ends with a non-zero exit and a summary (no false "Done").
 
 ## Use
 

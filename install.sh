@@ -3,6 +3,7 @@
 # Triple Crown installer — gstack + superpowers + GSD (gsd-core) + /start + guidelines
 # Portable: macOS, Linux, WSL.   On native Windows, run this inside WSL.
 # Usage:  bash install.sh    — interactive: pick Claude Code and/or Codex, then it installs.
+# Prereqs: curl + git + the runtime CLI you pick (logged in). Node 18+ is auto-installed (nvm) if missing.
 # Self-contained: the /start skill + PC-wide guidelines are embedded below (no network fetch).
 # ============================================================================
 set -uo pipefail
@@ -26,17 +27,40 @@ if [ "$OS" = other ]; then
   err "Unsupported environment. On Windows, run this inside WSL (Ubuntu)."; exit 1
 fi
 
-# ---- prerequisites (node/npx + git) ----
-MISS=0
-{ have node && have npx; } || { err "Node.js/npx missing. Install Node 18+: https://nodejs.org (or nvm)."; MISS=1; }
-have git || { err "git missing. Install git."; MISS=1; }
-if [ "$MISS" = 1 ]; then echo; err "Install the prerequisites above, then re-run."; exit 1; fi
-ok "prereqs: node/npx, git"
+# ---- prerequisites: curl + a WORKING git; Node is auto-installed (via nvm) if missing ----
+have curl || { err "curl missing. Install curl, then re-run."; exit 1; }
+# git --version (not just `command -v`) so the macOS Command Line Tools STUB doesn't pass falsely.
+if ! git --version >/dev/null 2>&1; then
+  echo; err "git not available (on macOS it may be only the Command Line Tools stub). Install it, then re-run:"
+  err "  Debian/Ubuntu/WSL:  sudo apt update && sudo apt install -y git"
+  err "  Fedora:             sudo dnf install -y git"
+  err "  macOS:              xcode-select --install"
+  exit 1
+fi
+# Node 18+ (GSD installs via npx). Auto-bootstrap the LTS via nvm if missing — same spirit as bun.
+if ! { have node && have npx; }; then
+  warn "Node.js/npx missing — installing the LTS via nvm..."
+  export NVM_DIR="$HOME/.nvm"
+  curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash || warn "nvm install failed"
+  [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+  command -v nvm >/dev/null 2>&1 && { nvm install --lts >/dev/null 2>&1; nvm use --lts >/dev/null 2>&1; }
+fi
+if ! { have node && have npx; }; then
+  echo; err "Node.js/npx still missing. Install Node 18+ then re-run:  https://nodejs.org  (or nvm)"; exit 1
+fi
+# Enforce major >= 18 (presence alone isn't enough for gsd-core). bash-3.2 / POSIX-safe parsing.
+NODE_MAJOR="$(node -v 2>/dev/null | sed -E 's/^v([0-9]+).*/\1/')"
+case "$NODE_MAJOR" in
+  ''|*[!0-9]*) warn "Could not read Node version ($(node -v 2>/dev/null)) — proceeding." ;;
+  *) [ "$NODE_MAJOR" -ge 18 ] || { echo; err "Node $(node -v) found, but 18+ is required. Upgrade (e.g. nvm install --lts), then re-run."; exit 1; } ;;
+esac
+ok "prereqs: curl, git, node $(node -v 2>/dev/null)"
 
 # ---- choose runtime(s) to set up: Claude Code and/or Codex ----
 # Interactive: pick one or BOTH. Reads the terminal even under `curl | bash` (stdin is the script there).
-if [ ! -r /dev/tty ]; then
-  err "This installer is interactive — run it in a terminal."; exit 1
+# Verify the tty can actually be OPENED (Git Bash stats /dev/tty readable but cannot open it -> would loop).
+if ! (exec 3</dev/tty) 2>/dev/null; then
+  err "No interactive terminal available. Run this in a real terminal (mac/Linux/WSL)."; exit 1
 fi
 WANT_CLAUDE=0; WANT_CODEX=0
 while [ "$WANT_CLAUDE" = 0 ] && [ "$WANT_CODEX" = 0 ]; do
@@ -46,7 +70,7 @@ while [ "$WANT_CLAUDE" = 0 ] && [ "$WANT_CODEX" = 0 ]; do
   echo "   2) Codex"
   echo "   3) Both"
   printf "Enter 1, 2, or 3: "
-  read -r ans < /dev/tty || ans=""
+  read -r ans < /dev/tty || { echo; err "Could not read your choice from the terminal."; exit 1; }
   case "$ans" in
     1)             WANT_CLAUDE=1 ;;
     2)             WANT_CODEX=1 ;;
@@ -56,6 +80,22 @@ while [ "$WANT_CLAUDE" = 0 ] && [ "$WANT_CODEX" = 0 ]; do
 done
 [ "$WANT_CLAUDE" = 1 ] && ok "selected: Claude Code"
 [ "$WANT_CODEX"  = 1 ] && ok "selected: Codex"
+
+# Heads-up if a chosen runtime's CLI isn't installed (file-based parts still install).
+if [ "$WANT_CLAUDE" = 1 ] && ! have claude; then
+  warn "Claude Code CLI not found on PATH — install + log in (https://docs.anthropic.com/en/docs/claude-code). superpowers needs it; the rest still installs."
+fi
+if [ "$WANT_CODEX" = 1 ] && ! have codex; then
+  warn "Codex CLI not found on PATH — install + log in. \$start needs it; the rest still installs."
+fi
+# WSL split-brain: if the only `claude` is the Windows install (via /mnt interop), plugins land in Windows ~/.claude.
+if [ "$WANT_CLAUDE" = 1 ] && [ "$OS" = wsl ] && have claude; then
+  case "$(readlink -f "$(command -v claude)" 2>/dev/null)" in
+    /mnt/*) warn "Your 'claude' is the Windows install (via /mnt interop): superpowers would land in Windows ~/.claude while the rest installs in WSL — split setup. For one consistent home, install Claude natively in WSL:  npm i -g @anthropic-ai/claude-code" ;;
+  esac
+fi
+
+FAILED=0   # count load-bearing (GSD) failures so the final summary is honest
 
 # ---- bun (needed by gstack ./setup, Claude-only) — bootstrap if missing ----
 if [ "$WANT_CLAUDE" = 1 ]; then
@@ -83,9 +123,13 @@ fi
 
 # ---- 2) superpowers (Claude plugin) ----
 if [ "$WANT_CLAUDE" = 1 ]; then
-  echo "Installing superpowers..."
-  claude plugin marketplace add anthropics/claude-plugins-official >/dev/null 2>&1 || true
-  claude plugin install superpowers@claude-plugins-official >/dev/null 2>&1 && ok "superpowers installed" || warn "superpowers install issues (is Claude logged in?)"
+  if ! have claude; then
+    warn "superpowers skipped — 'claude' CLI not found (install Claude Code + re-run)."
+  else
+    echo "Installing superpowers..."
+    claude plugin marketplace add anthropics/claude-plugins-official >/dev/null 2>&1 || true
+    claude plugin install superpowers@claude-plugins-official >/dev/null 2>&1 && ok "superpowers installed" || warn "superpowers install issues (is 'claude' logged in? try: claude login)"
+  fi
 fi
 
 # ---- 3) GSD (gsd-core) for Claude and/or Codex ----
@@ -93,10 +137,10 @@ echo "Installing GSD (gsd-core)..."
 # On WSL (and Docker bind-mounts), make hook paths $HOME-relative so settings.json stays portable.
 PH=""; [ "$OS" = wsl ] && { PH="--portable-hooks"; echo "  (WSL: using --portable-hooks)"; }
 if [ "$WANT_CLAUDE" = 1 ]; then
-  npx -y @opengsd/gsd-core@latest --claude --global $PH >/dev/null 2>&1 && ok "GSD -> Claude Code" || warn "GSD (claude) install issues"
+  npx -y @opengsd/gsd-core@latest --claude --global $PH >/dev/null 2>&1 && ok "GSD -> Claude Code" || { warn "GSD (claude) install issues"; FAILED=$((FAILED+1)); }
 fi
 if [ "$WANT_CODEX" = 1 ]; then
-  npx -y @opengsd/gsd-core@latest --codex --global $PH >/dev/null 2>&1 && ok "GSD -> Codex" || warn "GSD (codex) install issues"
+  npx -y @opengsd/gsd-core@latest --codex --global $PH >/dev/null 2>&1 && ok "GSD -> Codex" || { warn "GSD (codex) install issues"; FAILED=$((FAILED+1)); }
 fi
 
 # ---- 4) /start command (embedded skill) ----
@@ -232,6 +276,13 @@ mkdir -p "$HOME/.gsd"
 [ -f "$HOME/.gsd/triple-crown.json" ] || printf '{"version":1,"workflow":"triple-crown"}' > "$HOME/.gsd/triple-crown.json"
 
 echo
+if [ "${FAILED:-0}" -gt 0 ]; then
+  err "Finished with $FAILED problem(s): GSD (the spine) did not fully install — see the !! line(s) above."
+  echo "    Common causes: no network, or the runtime CLI not installed/logged in. Fix it and re-run (safe to repeat)."
+  [ "$WANT_CLAUDE" = 1 ] && echo "    Claude guidelines written -> ~/.claude/CLAUDE.md"
+  [ "$WANT_CODEX"  = 1 ] && echo "    Codex  guidelines written -> ~/.codex/AGENTS.md"
+  exit 1
+fi
 ok "Done. Restart your runtime, then:   /start \"<your idea>\"  (Claude)   ·   \$start \"<your idea>\"  (Codex)"
 echo "    Installed for your selected runtime(s) — GSD + /start + guidelines each; gstack/superpowers are Claude-only."
 [ "$WANT_CLAUDE" = 1 ] && echo "    Claude guidelines -> ~/.claude/CLAUDE.md"
