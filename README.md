@@ -1,6 +1,6 @@
 # triple-crown
 
-One-command setup for the Triple Crown AI dev workflow — **GSD (gsd-core) + gstack + superpowers + the `/start` command** — on Claude Code and Codex. Works on a Claude-only, Codex-only, or both machine.
+One-command setup for the Triple Crown AI dev workflow — **GSD (gsd-core) + gstack + superpowers + the `/start` command** — on Claude Code and Codex. You pick **Claude Code, Codex, or both** when you run it.
 
 ## Install (macOS / Linux / WSL)
 
@@ -12,29 +12,24 @@ curl -fsSL https://raw.githubusercontent.com/kwanGDss/triple-crown/main/install.
 
 The installer is self-contained — the `/start` skill and the PC-wide guidelines are embedded, no extra downloads.
 
-On launch it **asks which runtime(s) to set up** — pick **Claude Code**, **Codex**, or **both**:
+When you run it, it **asks which runtime(s) to set up** — pick **Claude Code**, **Codex**, or **both** — then installs and configures them:
 
 ```
-Which runtime(s) to set up?  (you can pick BOTH)
-   1) Claude Code   [detected]
-   2) Codex         [detected]
+Set up which runtime(s)?  (you can pick BOTH)
+   1) Claude Code
+   2) Codex
    3) Both
-Enter 1, 2, 3 (or e.g. '1 2')  [Enter = all detected]:
+Enter 1, 2, or 3:
 ```
 
-The prompt works even through `curl … | bash` (it reads your terminal). For **non-interactive / CI**, choose with flags or an env var instead:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/kwanGDss/triple-crown/main/install.sh | bash -s -- --claude   # or --codex, or --all
-TC_RUNTIMES="claude codex" bash <(curl -fsSL https://raw.githubusercontent.com/kwanGDss/triple-crown/main/install.sh)
-```
+The prompt works even through `curl … | bash` (it reads your terminal). Run it in a terminal — it's interactive.
 
 ### Prerequisites (install inside the same environment first)
-- **At least one runtime** — **Claude Code** CLI and/or **Codex** CLI (each one you use must be **logged in**)
+- The **runtime(s) you'll pick** — **Claude Code** CLI and/or **Codex** CLI (each must be **logged in**)
 - **Node.js 18+** (`node`/`npx`)
 - **git**
 
-It sets up only the runtime(s) you choose (a selected runtime whose CLI isn't installed is skipped with a warning):
+It sets up exactly the runtime(s) you choose:
 
 | | installs |
 |---|---|

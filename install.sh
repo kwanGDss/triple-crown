@@ -2,9 +2,7 @@
 # ============================================================================
 # Triple Crown installer — gstack + superpowers + GSD (gsd-core) + /start + guidelines
 # Portable: macOS, Linux, WSL.   On native Windows, run this inside WSL.
-# Usage:  bash install.sh                 # interactive: pick Claude Code and/or Codex
-#         bash install.sh --claude        # or --codex, or --all (non-interactive)
-#         TC_RUNTIMES="claude codex" bash install.sh
+# Usage:  bash install.sh    — interactive: pick Claude Code and/or Codex, then it installs.
 # Self-contained: the /start skill + PC-wide guidelines are embedded below (no network fetch).
 # ============================================================================
 set -uo pipefail
@@ -28,58 +26,34 @@ if [ "$OS" = other ]; then
   err "Unsupported environment. On Windows, run this inside WSL (Ubuntu)."; exit 1
 fi
 
-# ---- prerequisites (node/npx + git always required) ----
+# ---- prerequisites (node/npx + git) ----
 MISS=0
 { have node && have npx; } || { err "Node.js/npx missing. Install Node 18+: https://nodejs.org (or nvm)."; MISS=1; }
 have git || { err "git missing. Install git."; MISS=1; }
-if ! have claude && ! have codex; then
-  err "No runtime found. Install Claude Code (https://docs.anthropic.com/en/docs/claude-code) and/or Codex, then re-run."; MISS=1
-fi
-if [ "$MISS" = 1 ]; then echo; err "Install the prerequisites above, then re-run. (Each runtime you use must be logged in.)"; exit 1; fi
+if [ "$MISS" = 1 ]; then echo; err "Install the prerequisites above, then re-run."; exit 1; fi
 ok "prereqs: node/npx, git"
 
-# ---- choose runtime(s): Claude Code and/or Codex ----
-# Pick one or BOTH. Selection order:  CLI flags > env (TC_RUNTIMES) > interactive prompt > auto-detect.
-# Non-interactive / CI:   curl ... | bash -s -- --claude --codex     (or --all, or one of them)
-#                         TC_RUNTIMES="claude codex"  curl ... | bash
-WANT_CLAUDE=0; WANT_CODEX=0; PICKED=0
-for a in "$@"; do case "$a" in
-  --claude)     WANT_CLAUDE=1; PICKED=1 ;;
-  --codex)      WANT_CODEX=1;  PICKED=1 ;;
-  --all|--both) WANT_CLAUDE=1; WANT_CODEX=1; PICKED=1 ;;
-esac; done
-if [ "$PICKED" = 0 ] && [ -n "${TC_RUNTIMES:-}" ]; then
-  case "$TC_RUNTIMES" in *claude*) WANT_CLAUDE=1 ;; esac
-  case "$TC_RUNTIMES" in *codex*)  WANT_CODEX=1  ;; esac
-  PICKED=1
+# ---- choose runtime(s) to set up: Claude Code and/or Codex ----
+# Interactive: pick one or BOTH. Reads the terminal even under `curl | bash` (stdin is the script there).
+if [ ! -r /dev/tty ]; then
+  err "This installer is interactive — run it in a terminal."; exit 1
 fi
-# Interactive multi-select — reads the terminal even under `curl | bash` (stdin is the script there).
-if [ "$PICKED" = 0 ] && [ -r /dev/tty ]; then
+WANT_CLAUDE=0; WANT_CODEX=0
+while [ "$WANT_CLAUDE" = 0 ] && [ "$WANT_CODEX" = 0 ]; do
   echo
-  echo "Which runtime(s) to set up?  (you can pick BOTH)"
-  echo "   1) Claude Code   $(have claude && echo '[detected]' || echo '[not installed]')"
-  echo "   2) Codex         $(have codex  && echo '[detected]' || echo '[not installed]')"
+  echo "Set up which runtime(s)?  (you can pick BOTH)"
+  echo "   1) Claude Code"
+  echo "   2) Codex"
   echo "   3) Both"
-  printf "Enter 1, 2, 3 (or e.g. '1 2')  [Enter = all detected]: "
+  printf "Enter 1, 2, or 3: "
   read -r ans < /dev/tty || ans=""
   case "$ans" in
-    *3*) WANT_CLAUDE=1; WANT_CODEX=1 ;;
-    *)   case "$ans" in *1*) WANT_CLAUDE=1 ;; esac
-         case "$ans" in *2*) WANT_CODEX=1  ;; esac ;;
+    1)             WANT_CLAUDE=1 ;;
+    2)             WANT_CODEX=1 ;;
+    3|"1 2"|"2 1") WANT_CLAUDE=1; WANT_CODEX=1 ;;
+    *)             warn "Please enter 1, 2, or 3." ;;
   esac
-  PICKED=1
-fi
-# Fallback (no flags / no env / no tty / blank answer): auto-detect what's installed.
-if [ "$WANT_CLAUDE" = 0 ] && [ "$WANT_CODEX" = 0 ]; then
-  have claude && WANT_CLAUDE=1
-  have codex  && WANT_CODEX=1
-fi
-# Drop any selection whose CLI isn't actually installed.
-if [ "$WANT_CLAUDE" = 1 ] && ! have claude; then warn "Claude Code selected but 'claude' CLI not found — skipping (install it + re-run)."; WANT_CLAUDE=0; fi
-if [ "$WANT_CODEX"  = 1 ] && ! have codex;  then warn "Codex selected but 'codex' CLI not found — skipping (install it + re-run)."; WANT_CODEX=0; fi
-if [ "$WANT_CLAUDE" = 0 ] && [ "$WANT_CODEX" = 0 ]; then
-  echo; err "No usable runtime to set up. Install Claude Code and/or Codex (and select it), then re-run."; exit 1
-fi
+done
 [ "$WANT_CLAUDE" = 1 ] && ok "selected: Claude Code"
 [ "$WANT_CODEX"  = 1 ] && ok "selected: Codex"
 
