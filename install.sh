@@ -26,45 +26,57 @@ if [ "$OS" = other ]; then
   err "Unsupported environment. On Windows, run this inside WSL (Ubuntu)."; exit 1
 fi
 
-# ---- prerequisites the user must provide ----
+# ---- prerequisites ----
+# node/npx + git are always required. At least one runtime — Claude Code OR Codex — is required.
 MISS=0
-have claude || { err "Claude Code CLI missing. Install + log in: https://docs.anthropic.com/en/docs/claude-code"; MISS=1; }
 { have node && have npx; } || { err "Node.js/npx missing. Install Node 18+: https://nodejs.org (or nvm)."; MISS=1; }
 have git || { err "git missing. Install git."; MISS=1; }
-if [ "$MISS" = 1 ]; then echo; err "Install the prerequisites above, then re-run. (Claude Code must be logged in.)"; exit 1; fi
-ok "prereqs: claude, node/npx, git"
-if have codex; then ok "codex detected — GSD will also install for Codex"; else warn "codex not found — skipping Codex (optional)"; fi
-
-# ---- bun (needed by gstack ./setup) — bootstrap if missing ----
-if ! have bun; then
-  warn "bun missing — installing (gstack needs it)..."
-  curl -fsSL https://bun.sh/install | bash || warn "bun install failed"
-  export BUN_INSTALL="$HOME/.bun"; export PATH="$BUN_INSTALL/bin:$PATH"
+if ! have claude && ! have codex; then
+  err "No runtime found. Install Claude Code (https://docs.anthropic.com/en/docs/claude-code) and/or Codex, then re-run."; MISS=1
 fi
-have bun && ok "bun ready" || warn "bun unavailable — gstack will be skipped"
+if [ "$MISS" = 1 ]; then echo; err "Install the prerequisites above, then re-run. (Each runtime you use must be logged in.)"; exit 1; fi
+ok "prereqs: node/npx, git"
+if have claude; then ok "claude detected — installing Claude stack (gstack, superpowers, GSD, /start, guidelines)"; else warn "claude not found — skipping Claude Code stack (optional)"; fi
+if have codex;  then ok "codex detected — installing Codex stack (GSD, /start, guidelines)"; else warn "codex not found — skipping Codex (optional)"; fi
+
+# ---- bun (needed by gstack ./setup, Claude-only) — bootstrap if missing ----
+if have claude; then
+  if ! have bun; then
+    warn "bun missing — installing (gstack needs it)..."
+    curl -fsSL https://bun.sh/install | bash || warn "bun install failed"
+    export BUN_INSTALL="$HOME/.bun"; export PATH="$BUN_INSTALL/bin:$PATH"
+  fi
+  have bun && ok "bun ready" || warn "bun unavailable — gstack will be skipped"
+fi
 
 # ---- 1) gstack (Claude Code only; official install) ----
-GS="$HOME/.claude/skills/gstack"
-if [ -d "$GS/.git" ]; then
-  echo "gstack present — updating..."; ( cd "$GS" && git pull --quiet && ./setup ) && ok "gstack updated" || warn "gstack update issues"
-elif have bun; then
-  echo "Installing gstack..."
-  git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git "$GS" \
-    && ( cd "$GS" && ./setup ) && ok "gstack installed" || warn "gstack install issues (continuing)"
-else
-  warn "skipping gstack (no bun). GSD spine works; gstack lenses are optional extras."
+if have claude; then
+  GS="$HOME/.claude/skills/gstack"
+  if [ -d "$GS/.git" ]; then
+    echo "gstack present — updating..."; ( cd "$GS" && git pull --quiet && ./setup ) && ok "gstack updated" || warn "gstack update issues"
+  elif have bun; then
+    echo "Installing gstack..."
+    git clone --single-branch --depth 1 https://github.com/garrytan/gstack.git "$GS" \
+      && ( cd "$GS" && ./setup ) && ok "gstack installed" || warn "gstack install issues (continuing)"
+  else
+    warn "skipping gstack (no bun). GSD spine works; gstack lenses are optional extras."
+  fi
 fi
 
 # ---- 2) superpowers (Claude plugin) ----
-echo "Installing superpowers..."
-claude plugin marketplace add anthropics/claude-plugins-official >/dev/null 2>&1 || true
-claude plugin install superpowers@claude-plugins-official >/dev/null 2>&1 && ok "superpowers installed" || warn "superpowers install issues (is Claude logged in?)"
+if have claude; then
+  echo "Installing superpowers..."
+  claude plugin marketplace add anthropics/claude-plugins-official >/dev/null 2>&1 || true
+  claude plugin install superpowers@claude-plugins-official >/dev/null 2>&1 && ok "superpowers installed" || warn "superpowers install issues (is Claude logged in?)"
+fi
 
-# ---- 3) GSD (gsd-core) for Claude (+ Codex) ----
+# ---- 3) GSD (gsd-core) for Claude and/or Codex ----
 echo "Installing GSD (gsd-core)..."
 # On WSL (and Docker bind-mounts), make hook paths $HOME-relative so settings.json stays portable.
 PH=""; [ "$OS" = wsl ] && { PH="--portable-hooks"; echo "  (WSL: using --portable-hooks)"; }
-npx -y @opengsd/gsd-core@latest --claude --global $PH >/dev/null 2>&1 && ok "GSD -> Claude Code" || warn "GSD (claude) install issues"
+if have claude; then
+  npx -y @opengsd/gsd-core@latest --claude --global $PH >/dev/null 2>&1 && ok "GSD -> Claude Code" || warn "GSD (claude) install issues"
+fi
 if have codex; then
   npx -y @opengsd/gsd-core@latest --codex --global $PH >/dev/null 2>&1 && ok "GSD -> Codex" || warn "GSD (codex) install issues"
 fi
@@ -167,8 +179,8 @@ Do NOT ship / merge / deploy automatically — **tested-but-not-shipped** is thi
 SKILL_EOF
   ok "/start -> $dst"
 }
-write_skill "$HOME/.claude/skills/start/SKILL.md"
-have codex && write_skill "$HOME/.codex/skills/start/SKILL.md"
+have claude && write_skill "$HOME/.claude/skills/start/SKILL.md"
+have codex  && write_skill "$HOME/.codex/skills/start/SKILL.md"
 
 # ---- 4.5) PC-wide guidelines (managed block; cross-runtime: Claude + Codex) ----
 # Always-on instructions injected into every session. Idempotent: only the block
@@ -194,15 +206,17 @@ GUIDE_EOF
     printf '%s\n' "$GUIDE_END"; } > "$f"
   rm -f "$tmp"; ok "guidelines -> $f ($label)"
 }
-upsert_guidelines "$HOME/.claude/CLAUDE.md" "Claude Code"
-have codex && upsert_guidelines "$HOME/.codex/AGENTS.md" "Codex"
+have claude && upsert_guidelines "$HOME/.claude/CLAUDE.md" "Claude Code"
+have codex  && upsert_guidelines "$HOME/.codex/AGENTS.md" "Codex"
 
 # ---- 5) global process marker (every project same process) ----
 mkdir -p "$HOME/.gsd"
 [ -f "$HOME/.gsd/triple-crown.json" ] || printf '{"version":1,"workflow":"triple-crown"}' > "$HOME/.gsd/triple-crown.json"
 
 echo
-ok "Done. Restart Claude Code (or Codex), then:   /start \"<your idea>\""
-echo "    GSD + /start work on Claude Code and Codex. gstack lenses are Claude-only."
-echo "    PC-wide guidelines installed -> ~/.claude/CLAUDE.md (+ ~/.codex/AGENTS.md if codex)."
+ok "Done. Restart your runtime, then:   /start \"<your idea>\"  (Claude)   ·   \$start \"<your idea>\"  (Codex)"
+echo "    Installed per detected runtime — GSD + /start + guidelines for each; gstack/superpowers are Claude-only."
+have claude && echo "    Claude guidelines -> ~/.claude/CLAUDE.md"
+have codex  && echo "    Codex  guidelines -> ~/.codex/AGENTS.md"
 [ "$OS" = wsl ] && echo "    (WSL: installed under your WSL home, not Windows C:\\.)"
+exit 0

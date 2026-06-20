@@ -1,6 +1,6 @@
 # triple-crown
 
-One-command setup for the Triple Crown AI dev workflow — **GSD (gsd-core) + gstack + superpowers + the `/start` command** — on Claude Code and Codex.
+One-command setup for the Triple Crown AI dev workflow — **GSD (gsd-core) + gstack + superpowers + the `/start` command** — on Claude Code and Codex. Works on a Claude-only, Codex-only, or both machine.
 
 ## Install (macOS / Linux / WSL)
 
@@ -13,12 +13,18 @@ curl -fsSL https://raw.githubusercontent.com/kwanGDss/triple-crown/main/install.
 The installer is self-contained — the `/start` skill and the PC-wide guidelines are embedded, no extra downloads.
 
 ### Prerequisites (install inside the same environment first)
-- **Claude Code** CLI, installed **and logged in**
+- **At least one runtime** — **Claude Code** CLI and/or **Codex** CLI (each one you use must be **logged in**)
 - **Node.js 18+** (`node`/`npx`)
 - **git**
 
-The installer auto-handles **bun** (bootstraps it) and installs gstack, superpowers, GSD, `/start`, and the PC-wide guidelines.
-`codex` is optional — if present, GSD + `/start` + guidelines install for it too. On WSL, GSD hooks use `--portable-hooks`.
+The installer **detects which runtimes are present** and sets up each — run it on a **Claude-only**, a **Codex-only**, or a **both** machine:
+
+| | installs |
+|---|---|
+| **Claude Code** *(if present)* | gstack, superpowers, GSD, `/start`, PC-wide guidelines (auto-bootstraps **bun** for gstack) |
+| **Codex** *(if present)* | GSD, `/start`, PC-wide guidelines |
+
+On WSL, GSD hooks use `--portable-hooks`. gstack & superpowers are Claude-only by design.
 
 ## Use
 
@@ -37,11 +43,11 @@ Runs the current Triple Crown lifecycle: **validate → scaffold → build → t
 - **gstack** *(Claude only)* — specialist lenses GSD lacks: strategy (`office-hours`), plan reviews, live browser QA
 - **superpowers** *(Claude only)* — TDD / verification, applied automatically inside execution
 
-## PC-wide guidelines (always-on, both runtimes)
+## PC-wide guidelines (always-on, per installed runtime)
 
-The installer also writes an **always-on instruction block** that applies across every project on the machine:
+The installer also writes an **always-on instruction block** that applies across every project on the machine, to whichever runtimes are present:
 
-- **Claude Code** → `~/.claude/CLAUDE.md`
+- **Claude Code** → `~/.claude/CLAUDE.md` *(only if `claude` is installed)*
 - **Codex** → `~/.codex/AGENTS.md` *(only if `codex` is installed)*
 
 The block:
